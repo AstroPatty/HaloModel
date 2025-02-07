@@ -2,6 +2,13 @@ module Halos
 
 using Plots
 using LsqFit
+using Unitful
+
+import Cosmology as CosmoBase
+
+
+
+export Halo, HaloProfile, DifferentialProfile, get_halo_property, get_differential_profile, get_poisson_error, nfw, plot_differential_profile, cutoff_radius
 
 struct HaloProfile
     radius::Vector{<:Number}
@@ -29,7 +36,6 @@ end
 struct Halo
     properties::Dict{String,Number}
     profile::HaloProfile
-
 end
 
 
@@ -60,32 +66,17 @@ function get_poisson_error(profile::HaloProfile)::Vector{Number}
     get_poisson_error(profile, particle_mass)
 end
 
-function fit_nfw(halo::Halo, ρcrit::Number)
-    # fit an NFW profile to the halo profile
-    # return the best fit parameters
-    profile_radius = halo.profile.radius
-    bin_centers = (profile_radius[1:end-1] + profile_radius[2:end]) / 2
-    fitting_function = (radius, pars) -> nfw(pars[1], pars[2], radius, ρcrit)
-    fit = curve_fit(fitting_function, bin_centers, halo.profile.mass, [1.0, 1.0])
-    fit.param
-end
 
-function nfw(cdelta::Number, rdelta::Number, r::AbstractVector{<:Number}, ρcrit::Number)::Vector{Number}
-    delta = 200
-    rho = 4 / 3 * π * (ρcrit * delta) * rdelta^3
+
+
+function nfw(cdelta::AbstractFloat, rdelta::AbstractFloat, mdelta::AbstractFloat, r::AbstractVector{<:AbstractFloat})
     a = log(1 + cdelta) - cdelta / (1 + cdelta)
     rnorm = r ./ rdelta
-    dmdr = rho ./ ((a .* rnorm) .* (1 / cdelta .+ rnorm) .^ 2)
+    dmdr = @. mdelta / (rdelta * a) * rnorm / (1 / cdelta + rnorm)^2
     dmdr
 end
 
-function nfw(r::Number, cdelta::Number, rdelta::Number, ρcrit::Number)::Number
-    mdelta = 4 / 3 * π * ρcrit * rdelta^3
-    a = log(1 + cdelta) - cdelta / (1 + cdelta)
-    rnorm = r / rdelta
-    dmdr = mdelta / (rdelta * a) * rnorm / (1 / cdelta + rnorm)^2
-    dmdr
-end
+
 
 function plot_differential_profile(halo::Halo)
     differential_profile = get_differential_profile(halo)
@@ -97,6 +88,12 @@ function plot_differential_profile(halo::Halo)
     # log-log plot
 end
 
-end # module halo
+function cutoff_radius(halo::Halo, min_threshold::Integer)
+    bin_counts = halo.profile.count
+    smallest_bin_index = findfirst(cumsum(bin_counts) .> min_threshold)
+    r_infall_index = findfirst(halo.profile.vr .< 0)
+    r_200_index = findfirst(halo.profile.radius .> get_halo_property(halo, "sod_halo_radius"))
+    return (smallest_bin_index, max(r_infall_index, r_200_index))
+end
 
-
+end

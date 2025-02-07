@@ -1,28 +1,98 @@
-module model
+module Model
 using Plots
 using LsqFit
-include("convert.jl")
-using .Convert
 
-function plot_profile(radius, mass)
-    r, dmdr = Convert.make_bins(radius, mass)
-    # log-log plot
-    plot(r, dmdr, xaxis=:log, yaxis=:log)
+using ..Halos
+using ..Simulations
+using Unitful
+using Cosmology: FlatLCDM
+
+
+struct NfwProfile
+    cdelta::Float64
+    rdelta::Float64
+    mdelta::Float64
+    radius::Vector{Float64}
 end
 
-function fit_profile(r::Vector{<:Number}, dmdr::Vector{<:Number})
-    # fit a power law to the data
+function fit_nfw(halo::Halo, with_radius_cutoffs::Bool=false)
+    m200 = get_halo_property(halo, "sod_halo_mass")
+    r200 = get_halo_property(halo, "sod_halo_radius")
+    differential_profile = get_differential_profile(halo)
+    r = differential_profile.radius
+    dmdr = differential_profile.dmdr
+
+    if with_radius_cutoffs
+        smallest_bin_index, largest_bin_index = cutoff_radius(halo, 100)
+        r = r[smallest_bin_index:largest_bin_index]
+        dmdr = dmdr[smallest_bin_index:largest_bin_index-1]
+    end
+
+    fitting_function = (r, pars) -> nfw(pars[1], r200, m200, r)
+    bin_centers = (r[1:end-1] + r[2:end]) / 2
+    fit = curve_fit(fitting_function, bin_centers, dmdr, [6.0])
+    NfwProfile(fit.param[1], r200, m200, bin_centers)
 end
 
-function nfw_profile(r::Vector{<:Number}, cdelta, rdelta, rho_c)
-    delta = 200.0
-    mdelta = (4 / 3) * pi * rdelta^3 * rho_c * delta
-    a = log(1.0 + cdelta) - cdelta / (1.0 + cdelta)
-    rs = r ./ rdelta
-    dmdr = mdelta / (rdelta * a) * (rs ./ (1 / cdelta +.rs).^2)
-    return dmdr
-    # return the NFW profile
+
+function fit_nfw(halo::Halo, cosmo::FlatLCDM, redshift::Number, with_radius_cutoffs::Bool=false)
+    # fit an NFW profile to the halo profile
+    # return the best fit parameters
+    h = cosmo.h
+    ρcrit = Simulations.rho_crit(cosmo, redshift)
+    comoving_rhocrit = ρcrit / h^2 / (1 + redshift)^3
+    comoving_rhocrit = ustrip(comoving_rhocrit)
+
+    differential_profile = get_differential_profile(halo)
+    r = differential_profile.radius
+    dmdr = differential_profile.dmdr
+
+    if with_radius_cutoffs
+        smallest_bin_index, largest_bin_index = cutoff_radius(halo, 100)
+        r = r[smallest_bin_index:largest_bin_index]
+        dmdr = dmdr[smallest_bin_index:largest_bin_index-1]
+    end
+
+
+    bin_centers = (r[1:end-1] + r[2:end]) / 2
+    fitting_function = (radius, pars) -> nfw(pars[1], pars[2], radius, comoving_rhocrit)
+    fit = curve_fit(fitting_function, bin_centers, dmdr, [6.0, 1.0])
+    m200 = 200 * comoving_rhocrit * 4 / 3 * π * fit.param[2]^3
+    NfwProfile(fit.param[1], fit.param[2], m200, bin_centers)
+end
+
+function nfw(cdelta::Number, rdelta::Number, r::AbstractVector{<:Number}, ρcrit::Number)::Vector{Number}
+    delta = 200
+    m200 = 4 / 3 * π * (ρcrit * delta) * rdelta^3
+    nfw(cdelta, rdelta, m200, r)
 
 end
 
+function nfw(cdelta::AbstractFloat, rdelta::AbstractFloat, mdelta::AbstractFloat, r::AbstractVector{<:AbstractFloat})
+    a = log(1 + cdelta) - cdelta / (1 + cdelta)
+    rnorm = r ./ rdelta
+    dmdr = @. mdelta / (rdelta * a) * rnorm / (1 / cdelta + rnorm)^2
+    dmdr
 end
+
+function nfw(r::Number, cdelta::Number, rdelta::Number, ρcrit::Number)::Number
+    mdelta = 4 / 3 * π * ρcrit * rdelta^3
+    a = log(1 + cdelta) - cdelta / (1 + cdelta)
+    rnorm = r / rdelta
+    dmdr = mdelta / (rdelta * a) * rnorm / (1 / cdelta + rnorm)^2
+    dmdr
+end
+
+function plot_nfw(profile::NfwProfile)
+    r = profile.radius
+    dmdr = nfw(profile.cdelta, profile.rdelta, profile.mdelta, r)
+    plot(r, dmdr, label="NFW Profile")
+end
+
+function plot_nfw!(plot::Plots.Plot, profile::NfwProfile; label="NFW Profile")
+    r = profile.radius
+    dmdr = nfw(profile.cdelta, profile.rdelta, profile.mdelta, r)
+    plot!(plot, r, dmdr, label=label)
+end
+
+end # module Halos
