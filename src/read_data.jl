@@ -44,7 +44,6 @@ function build_halos(filename::String, properties::Dict{Int64,Dict{String,Any}};
                 halo_properties = properties[tni]
                 radius = read(fid["profiles"]["data"]["sod_halo_bin_radius"])[starts[i]+1:ends[i]]
                 # promote to float64
-                radius = convert(Vector{Float64}, radius)
                 counts = read(fid["profiles"]["data"]["sod_halo_bin_count"])[starts[i]+1:ends[i]]
                 mass = read(fid["profiles"]["data"]["sod_halo_bin_mass"])[starts[i]+1:ends[i]]
                 vr = read(fid["profiles"]["data"]["sod_halo_bin_rad_vel"])[starts[i]+1:ends[i]]

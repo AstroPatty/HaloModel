@@ -8,14 +8,15 @@ import Cosmology as CosmoBase
 
 
 
-export Halo, HaloProfile, DifferentialProfile, get_halo_property, get_differential_profile, get_poisson_error, nfw, plot_differential_profile, cutoff_radius
+export Halo, HaloProfile, DifferentialProfile, get_halo_property, get_differential_profile, get_poisson_error, plot_differential_profile, cutoff_radius
 
-struct HaloProfile
-    radius::Vector{<:Number}
-    count::Vector{<:Number}
-    mass::Vector{<:Number}
-    vr::Vector{<:Number}
-    function HaloProfile(radius::Vector{<:Number}, count::Vector{<:Number}, mass::Vector{<:Number}, vr::Vector{<:Number})
+
+struct HaloProfile{T<:AbstractFloat,U<:Integer}
+    radius::Vector{T}
+    count::Vector{U}
+    mass::Vector{T}
+    vr::Vector{T}
+    function HaloProfile(radius::Vector{T}, count::Vector{U}, mass::Vector{T}, vr::Vector{T}) where {T<:AbstractFloat,U<:Integer}
         if length(radius) != length(count) || length(radius) != length(mass) || length(radius) != length(vr)
             throw(ArgumentError("All vectors must have the same length"))
         end
@@ -24,28 +25,24 @@ struct HaloProfile
         ratio = r[2] / r[1]
         left_bin = r[1] / ratio
         r = pushfirst!(r, left_bin)
-        new(r, count[order], mass[order], vr[order])
+        new{T,U}(r, count[order], mass[order], vr[order])
     end
 end
 
-struct DifferentialProfile
-    radius::Vector{Number}
-    dmdr::Vector{Number}
+struct DifferentialProfile{T<:AbstractFloat}
+    radius::Vector{T}
+    dmdr::Vector{T}
 end
 
-struct Halo
-    properties::Dict{String,Number}
-    profile::HaloProfile
+struct Halo{T,U}
+    properties::Dict{String,Any}
+    profile::HaloProfile{T,U}
 end
 
 
-function get_halo_property(halo::Halo, property::String)::Union{Number,Nothing}
-    get(halo.properties, property, nothing)
-end
+get_halo_property(halo::Halo, property) = get(halo.properties, property, nothing)
 
-function get_differential_profile(halo::Halo)::DifferentialProfile
-    get_differential_profile(halo.profile)
-end
+get_differential_profile(halo::Halo) = get_differential_profile(halo.profile)
 
 function get_differential_profile(profile::HaloProfile)::DifferentialProfile
     dr = diff(profile.radius)
@@ -53,30 +50,20 @@ function get_differential_profile(profile::HaloProfile)::DifferentialProfile
     DifferentialProfile(profile.radius, dmdr)
 end
 
-function get_poisson_error(profile::HaloProfile, particle_mass::Number)::Vector{Number}
+function get_poisson_error(profile::HaloProfile{T,U}, particle_mass::T) where {T,U}
     count_in_shell = cumsum(profile.count)
-    count_in_shell = pushfirst!(count_in_shell, 0)
+    count_in_shell = pushfirst!(count_in_shell, U(0))
     uncertainty = particle_mass * sqrt.(count_in_shell)
-    deltam = sqrt.(uncertainty[2:end] .^ 2 .+ uncertainty[1:end-1] .^ 2)
-    deltam ./ diff(profile.radius)
+    dr = diff(profile.radius)
+
+    result = @. (sqrt(uncertainty[2:end]^2 + uncertainty[1:end-1]^2)) / dr
+    Vector{T}(result)
 end
 
-function get_poisson_error(profile::HaloProfile)::Vector{Number}
-    particle_mass = profile.mass[1] / profile.count[1]
+function get_poisson_error(profile::HaloProfile{T}) where {T}
+    particle_mass = profile.mass[1] / T(profile.count[1])
     get_poisson_error(profile, particle_mass)
 end
-
-
-
-
-function nfw(cdelta::AbstractFloat, rdelta::AbstractFloat, mdelta::AbstractFloat, r::AbstractVector{<:AbstractFloat})
-    a = log(1 + cdelta) - cdelta / (1 + cdelta)
-    rnorm = r ./ rdelta
-    dmdr = @. mdelta / (rdelta * a) * rnorm / (1 / cdelta + rnorm)^2
-    dmdr
-end
-
-
 
 function plot_differential_profile(halo::Halo)
     differential_profile = get_differential_profile(halo)
