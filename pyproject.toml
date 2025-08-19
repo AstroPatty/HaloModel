@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "juliacall>=0.9.26",
     "opencosmo==0.9.0b1",
     "pydtfe",
 ]

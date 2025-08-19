@@ -1,13 +1,8 @@
-from pathlib import Path
-
 import astropy.units as u
 import opencosmo as oc
 
-from halomodel.surface import re_avg
-
-test_data = Path("/Users/patrick/code/Production/OpenCosmo/test_data/snapshot")
-haloproperties = test_data / "haloproperties.hdf5"
-haloparticles = test_data / "haloparticles.hdf5"
+from halomodel.gp import make_gp
+from halomodel.surface import compute_re_avg
 
 
 def get_particle_mass(collection):
@@ -27,30 +22,48 @@ def get_particle_mass(collection):
 
 
 def main():
-    structures = oc.open(haloproperties, haloparticles)
-    halo_min_mass = oc.col("fof_halo_mass") > 1.4 * 10**14
-    halo_max_mass = oc.col("fof_halo_mass") < 1.4 * 10**14.5
-    concentration_min = oc.col("sod_halo_cdelta") > 5
-    particle_mass = get_particle_mass(structures)
-    structures = structures.filter(halo_min_mass, halo_max_mass, concentration_min)
+    structures = oc.open("data/halos.hdf5")
+    dx = oc.col("sod_halo_com_x") - oc.col("fof_halo_com_x")
+    dy = oc.col("sod_halo_com_y") - oc.col("fof_halo_com_y")
+    dz = oc.col("sod_halo_com_z") - oc.col("fof_halo_com_z")
+    xoff = (dx**2 + dy**2 + dz**2) ** 0.5 / oc.col("sod_halo_radius")
+    structures = structures.with_new_columns(xoff=xoff, dataset="halo_properties")
 
-    results = structures.evaluate(
-        re_avg,
-        insert=False,
+    structures = structures.evaluate(
+        make_gp,
+        insert=True,
+        halo_profiles=[
+            "sod_halo_bin_radius",
+            "sod_halo_bin_count",
+            "sod_halo_bin_mass",
+            "sod_halo_bin_rad_vel",
+        ],
         halo_properties=[
+            "sod_halo_mass",
+            "sod_halo_cdelta",
+            "sod_halo_radius",
+        ],
+        cosmology=structures.cosmology,
+        format="numpy",
+    )
+    structures = structures.evaluate(
+        compute_re_avg,
+        insert=True,
+        halo_properties=[
+            "fof_halo_tag",
             "fof_halo_center_x",
             "fof_halo_center_y",
             "fof_halo_center_z",
-            "fof_halo_mass",
         ],
-        dm_particles=["x", "y", "z"],
-        format="numpy",
-        particle_mass=particle_mass.value,
-        z_source=10.0,
+        gravity_particles=["x", "y", "z"],
+        particle_mass=get_particle_mass(structures).value,
         z_lens=0.5,
+        z_source=10,
         cosmology=structures.cosmology,
+        format="numpy",
+        samples_per_halo=100,
     )
-    print(results)
+    oc.write("output.hdf5", structures["halo_properties"])
 
 
 if __name__ == "__main__":
