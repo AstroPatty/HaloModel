@@ -93,7 +93,7 @@ def compute_re_avg(
         if i == random:
             plt.figure(figsize=(10, 10))
             plt.imshow(np.log10(result + 1e13))
-            plt.savefig(f"halos/{halo_properties['fof_halo_tag']}.png")
+            plt.savefig(f"/home/pwells/projects/HaloModel/halos/{halo_properties['fof_halo_tag']}.png")
 
         kappa = surface_density_to_kappa(result, z_lens, z_source, cosmology)
         re = compute_re(kappa, cosmology, z_lens, 2)
